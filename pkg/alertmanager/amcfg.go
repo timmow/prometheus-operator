@@ -107,7 +107,7 @@ type configBuilder struct {
 	store     *assets.Store
 }
 
-func newConfigBuilder(logger log.Logger, amVersion semver.Version, store *assets.Store) *configBuilder {
+func NewConfigBuilder(logger log.Logger, amVersion semver.Version, store *assets.Store) *configBuilder {
 	cg := &configBuilder{
 		logger:    logger,
 		amVersion: amVersion,
