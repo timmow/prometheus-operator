@@ -34,16 +34,19 @@ import (
 )
 
 const (
-	governingServiceName   = "alertmanager-operated"
-	defaultRetention       = "120h"
-	tlsAssetsDir           = "/etc/alertmanager/certs"
-	secretsDir             = "/etc/alertmanager/secrets/"
-	configmapsDir          = "/etc/alertmanager/configmaps/"
-	alertmanagerConfigDir  = "/etc/alertmanager/config"
-	alertmanagerConfigFile = "alertmanager.yaml"
-	alertmanagerStorageDir = "/alertmanager"
-	sSetInputHashName      = "prometheus-operator-input-hash"
-	defaultPortName        = "web"
+	governingServiceName               = "alertmanager-operated"
+	defaultRetention                   = "120h"
+	tlsAssetsDir                       = "/etc/alertmanager/certs"
+	secretsDir                         = "/etc/alertmanager/secrets/"
+	configmapsDir                      = "/etc/alertmanager/configmaps/"
+	alertmanagerConfigDir              = "/etc/alertmanager/config"
+	alertmanagerConfigOutDir           = "/etc/alertmanager/config_out"
+	alertmanagerConfigFile             = "alertmanager.yaml"
+	alertmanagerConfigFileCompressed   = "alertmanager.yaml.gz"
+	alertmanagerConfigEnvsubstFilename = "alertmanager.env.yaml"
+	alertmanagerStorageDir             = "/alertmanager"
+	sSetInputHashName                  = "prometheus-operator-input-hash"
+	defaultPortName                    = "web"
 )
 
 var (
@@ -232,7 +235,7 @@ func makeStatefulSetSpec(a *monitoringv1.Alertmanager, config Config, tlsAssetSe
 	}
 
 	amArgs := []string{
-		fmt.Sprintf("--config.file=%s", path.Join(alertmanagerConfigDir, alertmanagerConfigFile)),
+		fmt.Sprintf("--config.file=%s", path.Join(alertmanagerConfigOutDir, alertmanagerConfigEnvsubstFilename)),
 		fmt.Sprintf("--storage.path=%s", alertmanagerStorageDir),
 		fmt.Sprintf("--data.retention=%s", a.Spec.Retention),
 	}
@@ -452,6 +455,12 @@ func makeStatefulSetSpec(a *monitoringv1.Alertmanager, config Config, tlsAssetSe
 			},
 		},
 		assetsVolume,
+		{
+			Name: "config-out",
+			VolumeSource: v1.VolumeSource{
+				EmptyDir: &v1.EmptyDirVolumeSource{},
+			},
+		},
 	}
 
 	volName := volumeName(a.Name)
@@ -467,6 +476,11 @@ func makeStatefulSetSpec(a *monitoringv1.Alertmanager, config Config, tlsAssetSe
 			MountPath: alertmanagerConfigDir,
 		},
 		{
+			Name:      "config-out",
+			ReadOnly:  true,
+			MountPath: alertmanagerConfigOutDir,
+		},
+		{
 			Name:      "tls-assets",
 			ReadOnly:  true,
 			MountPath: tlsAssetsDir,
@@ -478,12 +492,16 @@ func makeStatefulSetSpec(a *monitoringv1.Alertmanager, config Config, tlsAssetSe
 		},
 	}
 
-	reloadWatchDirs := []string{alertmanagerConfigDir}
+	watchedDirectories := []string{}
 	configReloaderVolumeMounts := []v1.VolumeMount{
 		{
 			Name:      "config-volume",
 			MountPath: alertmanagerConfigDir,
 			ReadOnly:  true,
+		},
+		{
+			Name:      "config-out",
+			MountPath: alertmanagerConfigOutDir,
 		},
 	}
 
@@ -504,7 +522,7 @@ func makeStatefulSetSpec(a *monitoringv1.Alertmanager, config Config, tlsAssetSe
 		}
 		amVolumeMounts = append(amVolumeMounts, mount)
 		configReloaderVolumeMounts = append(configReloaderVolumeMounts, mount)
-		reloadWatchDirs = append(reloadWatchDirs, mountPath)
+		watchedDirectories = append(watchedDirectories, mountPath)
 	}
 
 	for _, c := range a.Spec.ConfigMaps {
@@ -526,7 +544,7 @@ func makeStatefulSetSpec(a *monitoringv1.Alertmanager, config Config, tlsAssetSe
 		}
 		amVolumeMounts = append(amVolumeMounts, mount)
 		configReloaderVolumeMounts = append(configReloaderVolumeMounts, mount)
-		reloadWatchDirs = append(reloadWatchDirs, mountPath)
+		watchedDirectories = append(watchedDirectories, mountPath)
 	}
 
 	amVolumeMounts = append(amVolumeMounts, a.Spec.VolumeMounts...)
@@ -534,9 +552,6 @@ func makeStatefulSetSpec(a *monitoringv1.Alertmanager, config Config, tlsAssetSe
 	terminationGracePeriod := int64(120)
 	finalSelectorLabels := config.Labels.Merge(podSelectorLabels)
 	finalLabels := config.Labels.Merge(podLabels)
-
-	var watchedDirectories []string
-	watchedDirectories = append(watchedDirectories, reloadWatchDirs...)
 
 	boolFalse := false
 	boolTrue := true
@@ -585,6 +600,8 @@ func makeStatefulSetSpec(a *monitoringv1.Alertmanager, config Config, tlsAssetSe
 			operator.WatchedDirectories(watchedDirectories),
 			operator.VolumeMounts(configReloaderVolumeMounts),
 			operator.Shard(-1),
+			operator.ConfigFile(path.Join(alertmanagerConfigDir, alertmanagerConfigFileCompressed)),
+			operator.ConfigEnvsubstFile(path.Join(alertmanagerConfigOutDir, alertmanagerConfigEnvsubstFilename)),
 		),
 	}
 
