@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus-operator/prometheus-operator/pkg/alertmanager"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	monitoringv1alpha1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1alpha1"
+	"github.com/prometheus-operator/prometheus-operator/pkg/operator"
 )
 
 func testAMCreateDeleteCluster(t *testing.T) {
@@ -1090,8 +1091,8 @@ func testAlertmanagerConfigCRD(t *testing.T) {
 			return false, nil
 		}
 
-		if cfgSecret.Data["alertmanager.yaml"] == nil {
-			lastErr = errors.New("'alertmanager.yaml' key is missing in generated configuration secret")
+		if cfgSecret.Data["alertmanager.yaml.gz"] == nil {
+			lastErr = errors.New("'alertmanager.yaml.gz' key is missing in generated configuration secret")
 			return false, nil
 		}
 
@@ -1187,7 +1188,11 @@ mute_time_intervals:
 templates: []
 `, configNs, configNs, configNs, configNs, configNs, configNs, configNs, configNs, configNs, configNs, configNs)
 
-		if diff := cmp.Diff(string(cfgSecret.Data["alertmanager.yaml"]), expected); diff != "" {
+		uncompressed, err := operator.GunzipConfig(cfgSecret.Data["alertmanager.yaml.gz"])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if diff := cmp.Diff(uncompressed, expected); diff != "" {
 			lastErr = errors.Errorf("got(-), want(+):\n%s", diff)
 			return false, nil
 		}
@@ -1213,8 +1218,8 @@ templates: []
 			return false, nil
 		}
 
-		if cfgSecret.Data["alertmanager.yaml"] == nil {
-			lastErr = errors.New("'alertmanager.yaml' key is missing in generated configuration secret")
+		if cfgSecret.Data["alertmanager.yaml.gz"] == nil {
+			lastErr = errors.New("'alertmanager.yaml.gz' key is missing in generated configuration secret")
 			return false, nil
 		}
 		expected := `global:
@@ -1235,7 +1240,11 @@ receivers:
 templates: []
 `
 
-		if diff := cmp.Diff(string(cfgSecret.Data["alertmanager.yaml"]), expected); diff != "" {
+		uncompressed, err := operator.GunzipConfig(cfgSecret.Data["alertmanager.yaml.gz"])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if diff := cmp.Diff(uncompressed, expected); diff != "" {
 			lastErr = errors.Errorf("got(-), want(+):\n%s", diff)
 			return false, nil
 		}
@@ -1305,13 +1314,18 @@ inhibit_rules:
 			return false, nil
 		}
 
-		if cfgSecret.Data["alertmanager.yaml"] == nil {
-			lastErr = errors.New("'alertmanager.yaml' key is missing")
+		if cfgSecret.Data["alertmanager.yaml.gz"] == nil {
+			lastErr = errors.New("'alertmanager.yaml.gz' key is missing")
 			return false, nil
 		}
 
-		if string(cfgSecret.Data["alertmanager.yaml"]) != yamlConfig {
-			lastErr = errors.Errorf("expected Alertmanager configuration %q, got %q", yamlConfig, cfgSecret.Data["alertmanager.yaml"])
+		uncompressed, err := operator.GunzipConfig(cfgSecret.Data["alertmanager.yaml.gz"])
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if uncompressed != yamlConfig {
+			lastErr = errors.Errorf("expected Alertmanager configuration %q, got %q", yamlConfig, uncompressed)
 			return false, nil
 		}
 
